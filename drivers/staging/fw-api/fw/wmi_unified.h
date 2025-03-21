@@ -28910,6 +28910,9 @@ typedef struct {
     A_UINT32 tlv_header; /** TLV tag and len; tag equals WMITLV_TAG_STRUC_wmi_stats1_event_fix_param */
     A_UINT32 vdev_id; /** vdev ID */
     A_UINT32 data_len; /** length in byte of data[]. */
+#ifndef CONFIG_ARCH_LAHAINA
+    A_UINT32 data_type;
+#endif
     /* This structure is used to send REQ binary blobs
      * from firmware to application/service where Host drv is pass through .
      * Following this structure is the TLV:
