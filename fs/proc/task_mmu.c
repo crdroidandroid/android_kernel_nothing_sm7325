@@ -953,25 +953,15 @@ static void show_smap_vma(struct seq_file *m, void *v)
 		if (inode->i_mapping &&
 			unlikely(test_bit(AS_FLAGS_SUS_MAP, &inode->i_mapping->flags) &&
 			susfs_is_current_proc_umounted_app()))
-		{
-			show_map_vma(m, vma);
-			SEQ_PUT_DEC("Size:           ", vma->vm_end - vma->vm_start);
-			SEQ_PUT_DEC(" kB\nKernelPageSize: ", vma_kernel_pagesize(vma));
-			SEQ_PUT_DEC(" kB\nMMUPageSize:    ", vma_mmu_pagesize(vma));
-			seq_puts(m, " kB\n");
-			__show_smap(m, &mss, false);
-			seq_printf(m, "THPeligible:    %d\n", 0);
-			if (arch_pkeys_enabled())
-					seq_printf(m, "ProtectionKey:  %8u\n", vma_pkey(vma));
-			seq_puts(m, "VmFlags: mr mw me");
-			seq_putc(m, '\n');
-			goto show_pad;
-		}
+				goto bypass_orig_flow;
 	}
 #endif
 
 	smap_gather_stats(vma, &mss);
 
+#ifdef CONFIG_KSU_SUSFS_SUS_MAP
+bypass_orig_flow:
+#endif
 	show_map_vma(m, vma);
 	if (vma_get_anon_name(vma)) {
 		seq_puts(m, "Name:           ");
