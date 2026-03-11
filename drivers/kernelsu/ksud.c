@@ -1,4 +1,3 @@
-#include "manager.h"
 #include <asm/current.h>
 #include <linux/compat.h>
 #include <linux/cred.h>
@@ -85,7 +84,6 @@ void on_post_fs_data(void)
 	done = true;
 	pr_info("on_post_fs_data!\n");
 	ksu_load_allow_list();
-	ksu_observer_init();
 	// sanity check, this may influence the performance
 	stop_input_hook();
 
