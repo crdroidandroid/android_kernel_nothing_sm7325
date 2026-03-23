@@ -15,7 +15,7 @@
 #include <linux/exportfs.h>
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 #include <linux/susfs_def.h>
-#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+#endif
 
 #include "inotify/inotify.h"
 #include "fdinfo.h"
@@ -34,7 +34,7 @@ static void show_fdinfo(struct seq_file *m, struct file *f,
 static void show_fdinfo(struct seq_file *m, struct file *f,
 			void (*show)(struct seq_file *m,
 				     struct fsnotify_mark *mark))
-#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+#endif
 {
 	struct fsnotify_group *group = f->private_data;
 	struct fsnotify_mark *mark;
@@ -45,7 +45,7 @@ static void show_fdinfo(struct seq_file *m, struct file *f,
 		show(m, mark, f);
 #else
 		show(m, mark);
-#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+#endif
 		if (seq_has_overflowed(m))
 			break;
 	}
@@ -91,13 +91,13 @@ static void show_mark_fhandle(struct seq_file *m, struct inode *inode)
 static void inotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark, struct file *file)
 #else
 static void inotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark)
-#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+#endif
 {
 	struct inotify_inode_mark *inode_mark;
 	struct inode *inode;
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 	struct mount *mnt = NULL;
-#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+#endif
 
 	if (mark->connector->type != FSNOTIFY_OBJ_TYPE_INODE)
 		return;

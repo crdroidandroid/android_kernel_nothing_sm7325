@@ -97,14 +97,19 @@
 #include <linux/sched/stat.h>
 #include <linux/posix-timers.h>
 #include <linux/cpufreq_times.h>
-#ifdef CONFIG_KSU_SUSFS_SUS_MAP
+#if defined(CONFIG_KSU_SUSFS_SUS_MAP) && defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)
 #include <linux/susfs_def.h>
 #endif
+#include <linux/cn_proc.h>
 #include <trace/events/oom.h>
 #include "internal.h"
 #include "fd.h"
 
 #include "../../lib/kstrtox.h"
+
+#ifdef CONFIG_PAGE_BOOST
+#include <linux/delayacct.h>
+#endif
 
 /* NOTE:
  *	Implementing inode permission operations in /proc is almost
@@ -503,6 +508,57 @@ static int proc_pid_stack(struct seq_file *m, struct pid_namespace *ns,
 	kfree(entries);
 
 	return err;
+}
+#endif
+
+#ifdef CONFIG_PAGE_BOOST
+static int proc_pid_ioinfo(struct seq_file *m, struct pid_namespace *ns,
+			      struct pid *pid, struct task_struct *task)
+{
+	struct task_io_accounting acct = task->ioac;
+	unsigned long flags;
+	int result;
+
+	result = mutex_lock_killable(&task->signal->cred_guard_mutex);
+	if (result)
+		return result;
+
+	if (!ptrace_may_access(task, PTRACE_MODE_READ_FSCREDS)) {
+		result = -EACCES;
+		goto out_unlock;
+	}
+
+	if (lock_task_sighand(task, &flags)) {
+		struct task_struct *t = task;
+
+		task_io_accounting_add(&acct, &task->signal->ioac);
+		while_each_thread(task, t)
+			task_io_accounting_add(&acct, &t->ioac);
+
+		unlock_task_sighand(task, &flags);
+	}
+
+	seq_printf(m,
+		   "%llu\n"
+		   "%llu\n"
+		   "%llu\n",
+#ifdef CONFIG_TASK_XACCT
+		   (unsigned long long)acct.rchar,
+#else
+		   (unsigned long long)0,
+#endif
+#ifdef CONFIG_TASK_IO_ACCOUNTING
+		   (unsigned long long)acct.read_bytes,
+#else
+		   (unsigned long long)0,
+#endif
+		   (unsigned long long)delayacct_blkio_nsecs(task));
+
+	result = 0;
+
+out_unlock:
+	mutex_unlock(&task->signal->cred_guard_mutex);
+	return result;
 }
 #endif
 
@@ -917,10 +973,7 @@ static ssize_t mem_rw(struct file *file, char __user *buf,
 		vma = find_vma(mm, addr);
 		if (vma && vma->vm_file) {
 			struct inode *inode = file_inode(vma->vm_file);
-			if (inode->i_mapping &&
-				unlikely(test_bit(AS_FLAGS_SUS_MAP, &inode->i_mapping->flags) &&
-				susfs_is_current_proc_umounted_app()))
-			{
+			if (SUSFS_IS_INODE_SUS_MAP(inode)) {
 				if (write) {
 					copied = -EFAULT;
 				} else {
@@ -1729,8 +1782,10 @@ static ssize_t comm_write(struct file *file, const char __user *buf,
 	if (!p)
 		return -ESRCH;
 
-	if (same_thread_group(current, p))
+	if (same_thread_group(current, p)) {
 		set_task_comm(p, buffer);
+		proc_comm_connector(p);
+	}
 	else
 		count = -EINVAL;
 
@@ -1812,6 +1867,10 @@ out:
 	return ERR_PTR(error);
 }
 
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+extern int susfs_open_redirect_spoof_do_proc_readlink(struct inode *inode, char *tmp_buf, int buflen);
+#endif
+
 static int do_proc_readlink(struct path *path, char __user *buffer, int buflen)
 {
 	char *tmp = (char *)__get_free_page(GFP_KERNEL);
@@ -1820,6 +1879,18 @@ static int do_proc_readlink(struct path *path, char __user *buffer, int buflen)
 
 	if (!tmp)
 		return -ENOMEM;
+
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+	if (SUSFS_IS_INODE_OPEN_REDIRECT(path->dentry->d_inode)) {
+		if (!susfs_open_redirect_spoof_do_proc_readlink(path->dentry->d_inode, tmp, buflen)) {
+			len = strlen(tmp);
+			if (copy_to_user(buffer, tmp, len))
+				len = -EFAULT;
+			kfree(tmp);
+			return len;
+		}
+	}
+#endif
 
 	pathname = d_path(path, tmp, PAGE_SIZE);
 	len = PTR_ERR(pathname);
@@ -2395,9 +2466,7 @@ proc_map_files_readdir(struct file *file, struct dir_context *ctx)
 			continue;
 #ifdef CONFIG_KSU_SUSFS_SUS_MAP
 		inode = file_inode(vma->vm_file);
-		if (inode->i_mapping &&
-			unlikely(test_bit(AS_FLAGS_SUS_MAP, &inode->i_mapping->flags) &&
-			susfs_is_current_proc_umounted_app()))
+		if (SUSFS_IS_INODE_SUS_MAP(inode))
 			continue;
 #endif
 		if (++pos <= ctx->pos)
@@ -3399,6 +3468,13 @@ static const struct pid_entry tgid_base_stuff[] = {
 	ONE("stat",       S_IRUGO, proc_tgid_stat),
 	ONE("statm",      S_IRUGO, proc_pid_statm),
 	REG("maps",       S_IRUGO, proc_pid_maps_operations),
+#ifdef CONFIG_PAGE_BOOST
+	REG("filemap_list",       S_IRUGO, proc_pid_filemap_list_operations),
+	ONE("ioinfo",  S_IRUGO, proc_pid_ioinfo),
+#ifdef CONFIG_PAGE_BOOST_RECORDING
+	REG("io_record_control",      S_IRUGO|S_IWUGO, proc_pid_io_record_operations),
+#endif
+#endif
 #ifdef CONFIG_NUMA
 	REG("numa_maps",  S_IRUGO, proc_pid_numa_maps_operations),
 #endif

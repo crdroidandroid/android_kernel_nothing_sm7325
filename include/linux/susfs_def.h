@@ -3,6 +3,7 @@
 
 #include <linux/bits.h>
 #include <linux/cred.h>
+#include <linux/version.h>
 
 /********/
 /* ENUM */
@@ -10,8 +11,8 @@
 /* shared with userspace ksu_susfs tool */
 #define SUSFS_MAGIC 0xFAFAFAFA
 #define CMD_SUSFS_ADD_SUS_PATH 0x55550
-#define CMD_SUSFS_SET_ANDROID_DATA_ROOT_PATH 0x55551
-#define CMD_SUSFS_SET_SDCARD_ROOT_PATH 0x55552
+#define CMD_SUSFS_SET_ANDROID_DATA_ROOT_PATH 0x55551 /* deprecated */
+#define CMD_SUSFS_SET_SDCARD_ROOT_PATH 0x55552 /* deprecated */
 #define CMD_SUSFS_ADD_SUS_PATH_LOOP 0x55553
 #define CMD_SUSFS_ADD_SUS_MOUNT 0x55560 /* deprecated */
 #define CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS 0x55561
@@ -79,5 +80,59 @@ static inline bool susfs_is_current_proc_umounted_app(void) {
 	return (test_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED) &&
 			current_uid().val >= 10000);
 }
+
+#define SUSFS_IS_INODE_SUS_MAP(inode) \
+		inode && inode->i_mapping && \
+		unlikely(test_bit(AS_FLAGS_SUS_MAP, &inode->i_mapping->flags)) && \
+		susfs_is_current_proc_umounted_app()
+
+#define SUSFS_IS_INODE_OPEN_REDIRECT_WITHOUT_UID_CHECK(inode) \
+		inode && inode->i_mapping && \
+		unlikely(test_bit(AS_FLAGS_OPEN_REDIRECT, &inode->i_mapping->flags))
+
+#define SUSFS_IS_INODE_OPEN_REDIRECT(inode) \
+		inode && inode->i_mapping && \
+		unlikely(test_bit(AS_FLAGS_OPEN_REDIRECT, &inode->i_mapping->flags)) && \
+		susfs_is_current_proc_umounted_app()
+
+// Macros to handle fsnotify API changes across kernel versions
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 2, 0)
+typedef const struct qstr *susfs_fname_t;
+#define susfs_fname_len(f) ((f)->len)
+#define susfs_fname_arg(f) ((f)->name)
+#else
+typedef const unsigned char *susfs_fname_t;
+#define susfs_fname_len(f) (strlen(f))
+#define susfs_fname_arg(f) (f)
+#endif
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
+#define SUSFS_DECL_FSNOTIFY_OPS(name)                                          \
+	int name(struct fsnotify_mark *mark, u32 mask, struct inode *inode,    \
+		 struct inode *dir, const struct qstr *file_name, u32 cookie)
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5, 2, 0)
+#define SUSFS_DECL_FSNOTIFY_OPS(name)                                          \
+	int name(struct fsnotify_group *group, struct inode *inode, u32 mask,  \
+		 const void *data, int data_type, susfs_fname_t file_name,       \
+		 u32 cookie, struct fsnotify_iter_info *iter_info)
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 18, 0)
+#define SUSFS_DECL_FSNOTIFY_OPS(name)                                          \
+	int name(struct fsnotify_group *group, struct inode *inode, u32 mask,  \
+		 const void *data, int data_type, susfs_fname_t file_name,       \
+		 u32 cookie, struct fsnotify_iter_info *iter_info)
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
+#define SUSFS_DECL_FSNOTIFY_OPS(name)                                          \
+	int name(struct fsnotify_group *group, struct inode *inode,            \
+		 struct fsnotify_mark *inode_mark,                             \
+		 struct fsnotify_mark *vfsmount_mark, u32 mask,                \
+		 const void *data, int data_type, susfs_fname_t file_name,       \
+		 u32 cookie, struct fsnotify_iter_info *iter_info)
+#else
+#define SUSFS_DECL_FSNOTIFY_OPS(name)                                          \
+	int name(struct fsnotify_group *group, struct inode *inode,            \
+		 struct fsnotify_mark *inode_mark,                             \
+		 struct fsnotify_mark *vfsmount_mark, u32 mask, void *data,    \
+		 int data_type, susfs_fname_t file_name, u32 cookie)
+#endif
 
 #endif // #ifndef KSU_SUSFS_DEF_H
