@@ -36,9 +36,15 @@
 #include "pnode.h"
 #include "internal.h"
 
+/* extern declaration for user_path_mountpoint_at from fs/namei.c */
+extern int user_path_mountpoint_at(int dfd, const char __user *name, unsigned int flags, struct path *path);
+
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 extern bool susfs_is_current_ksu_domain(void);
 extern bool susfs_is_sdcard_android_data_decrypted;
+#endif
+
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 
 #define CL_COPY_MNT_NS BIT(25) /* used by copy_mnt_ns() */
 
@@ -153,6 +159,8 @@ static inline int is_exception(char *comm)
 	return 0;
 }
 
+/* Android-specific trace code removed due to undefined SDFAT_SUPER_MAGIC and ST_LOG */
+#if 0
 static inline void sys_umount_trace_print(struct mount *mnt, int flags)
 {
 	struct super_block *sb = mnt->mnt.mnt_sb;
@@ -170,6 +178,9 @@ static inline void sys_umount_trace_print(struct mount *mnt, int flags)
 			flags, umount_exit_str[sys_umount_trace_status]);
 	}
 }
+#else
+static inline void sys_umount_trace_print(struct mount *mnt, int flags) { }
+#endif
 
 static inline struct hlist_head *mp_hash(struct dentry *dentry)
 {
@@ -2038,6 +2049,36 @@ SYSCALL_DEFINE1(oldumount, char __user *, name)
 }
 
 #endif
+
+static int can_umount(const struct path *path, int flags)
+ {
+	 struct mount *mnt = real_mount(path->mnt);
+	 if (flags & ~(MNT_FORCE | MNT_DETACH | MNT_EXPIRE | UMOUNT_NOFOLLOW))
+		 return -EINVAL;
+	 if (!may_mount())
+		 return -EPERM;
+	 if (path->dentry != path->mnt->mnt_root)
+		 return -EINVAL;
+	 if (!check_mnt(mnt))
+		 return -EINVAL;
+	 if (mnt->mnt.mnt_flags & MNT_LOCKED)
+		 return -EINVAL;
+	 if (flags & MNT_FORCE && !capable(CAP_SYS_ADMIN))
+		 return -EPERM;
+	 return 0;
+ }
+
+int path_umount(struct path *path, int flags)
+ {
+	 struct mount *mnt = real_mount(path->mnt);
+	 int ret;
+	 ret = can_umount(path, flags);
+	 if (!ret)
+		 ret = do_umount(mnt, flags);
+	 dput(path->dentry);
+	 mntput_no_expire(mnt);
+	 return ret;
+ }
 
 static bool is_mnt_ns_file(struct dentry *dentry)
 {
