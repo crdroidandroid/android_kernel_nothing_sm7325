@@ -955,7 +955,7 @@ CONFIG_KSU_SUSFS_SUS_MAP=y
 # Kernel configurations for full DroidSpaces support
 # IPC mechanisms (required for tools that rely on shared memory and IPC namespaces)
 CONFIG_SYSCTL=y
-CONFIG_SYSVIPC=y
+CONFIG_SYSVIPC=n
 CONFIG_POSIX_MQUEUE=y
 
 # Core namespace support (essential for isolation and running init systems)
