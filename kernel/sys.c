@@ -1275,6 +1275,11 @@ static int override_release(char __user *release, size_t len)
 #endif
 #endif
 
+#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
+extern struct static_key_true susfs_set_uname_key_true;
+extern void susfs_spoof_uname(struct new_utsname* tmp);
+#endif
+
 SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
 {
 	struct new_utsname tmp;
@@ -1283,6 +1288,7 @@ SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
 
 	down_read(&uts_sem);
 	memcpy(&tmp, utsname(), sizeof(tmp));
+
 #ifndef CONFIG_FAKE_UNAME_NONE
 	if (current_uid().val == 0) {
 		if (!strncmp(current->comm, "bpfloader", 9) ||
@@ -1294,6 +1300,11 @@ SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
 				current->comm, current->pid, tmp.release);
 		}
 	}
+#endif
+
+#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
+	if (static_branch_likely(&susfs_set_uname_key_true))
+		susfs_spoof_uname(&tmp);
 #endif
 	up_read(&uts_sem);
 
