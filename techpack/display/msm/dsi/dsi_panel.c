@@ -4471,6 +4471,13 @@ int dsi_panel_set_lp1(struct dsi_panel *panel)
 
 	if (finger_hbm_flag == 1) {
 		finger_hbm_flag = 0;
+		/*
+		 * fod_ui must track finger_hbm_flag. Leaving it set makes the
+		 * status == fod_ui check in _sde_connector_update_finger_hbm_status()
+		 * short-circuit the next press, so HBM never comes up and the
+		 * fod_ui sysfs notify the fingerprint HAL waits on never fires.
+		 */
+		dsi_panel_set_fod_ui(panel, false);
 	}
 
 exit:
@@ -4498,6 +4505,7 @@ int dsi_panel_set_lp2(struct dsi_panel *panel)
 
 	if (finger_hbm_flag == 1) {
 		finger_hbm_flag = 0;
+		dsi_panel_set_fod_ui(panel, false);
 	}
 
 exit:
@@ -4965,6 +4973,7 @@ int dsi_panel_disable(struct dsi_panel *panel)
 
 	if (finger_hbm_flag == 1) {
 		finger_hbm_flag = 0;
+		dsi_panel_set_fod_ui(panel, false);
 	}
 
 	mutex_unlock(&panel->panel_lock);
