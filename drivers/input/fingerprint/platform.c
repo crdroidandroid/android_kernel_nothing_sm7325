@@ -100,14 +100,19 @@ err_reset:
 
 void gf_cleanup(struct gf_dev *gf_dev)
 {
+	struct device *dev = &gf_dev->spi->dev;
+
 	pr_info("[info] %s\n", __func__);
 
+	/* devm_gpio_free() to match gf_parse_dts() and drop the devres entry */
 	if (gpio_is_valid(gf_dev->irq_gpio)) {
-		gpio_free(gf_dev->irq_gpio);
+		devm_gpio_free(dev, gf_dev->irq_gpio);
+		gf_dev->irq_gpio = -EINVAL;
 		pr_info("remove irq_gpio success\n");
 	}
 	if (gpio_is_valid(gf_dev->reset_gpio)) {
-		gpio_free(gf_dev->reset_gpio);
+		devm_gpio_free(dev, gf_dev->reset_gpio);
+		gf_dev->reset_gpio = -EINVAL;
 		pr_info("remove reset_gpio success\n");
 	}
 }

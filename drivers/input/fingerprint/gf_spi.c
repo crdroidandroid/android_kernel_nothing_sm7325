@@ -582,7 +582,12 @@ static int gf_open(struct inode *inode, struct file *filp)
 err_irq:
 	gf_cleanup(gf_dev);
 err_parse_dt:
-        mutex_unlock(&device_list_lock);
+	if (gf_dev->active_panel)
+		drm_panel_notifier_unregister(gf_dev->active_panel,
+				&gf_dev->notifier);
+	/* no fd is handed out on failure, so gf_release() will never run */
+	gf_dev->users--;
+	mutex_unlock(&device_list_lock);
 	return status;
 }
 
@@ -616,6 +621,18 @@ static int gf_release(struct inode *inode, struct file *filp)
 		/*power off the sensor*/
 		gf_dev->device_available = 0;
 		gf_power_off(gf_dev);
+
+		/*
+		 * gf_open() redoes the dts parse and irq request every time the
+		 * first user shows up, so undo them here. Without this a HAL
+		 * restart re-requests GPIOs and the irq that are still held,
+		 * gets -EBUSY and leaves the sensor dead until reboot.
+		 */
+		irq_cleanup(gf_dev);
+		if (gf_dev->active_panel)
+			drm_panel_notifier_unregister(gf_dev->active_panel,
+					&gf_dev->notifier);
+		gf_cleanup(gf_dev);
 	}
 	mutex_unlock(&device_list_lock);
 	return status;
